@@ -3,6 +3,8 @@
 pub extern crate rustls;
 pub extern crate webpki;
 
+#[macro_use] extern crate log;
+
 #[cfg(feature = "tokio")] mod tokio_impl;
 #[cfg(feature = "unstable-futures")] mod futures_impl;
 
