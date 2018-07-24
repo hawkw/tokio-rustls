@@ -31,14 +31,12 @@ impl<S, C> Future for MidHandshake<S, C>
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        trace!("MidHandshake::poll");
         loop {
             let stream = self.inner.as_mut().unwrap();
             if !stream.session.is_handshaking() { break };
 
             let (io, session) = stream.get_mut();
             let complete_io = session.complete_io(io);
-            trace!("MidHandshake::poll: try complete_io {:?}", complete_io);
             match complete_io {
                 Ok(_) => (),
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(Async::NotReady),
@@ -69,7 +67,7 @@ impl<S, C> AsyncWrite for TlsStream<S, C>
         }
 
         let complete_io = self.session.complete_io(&mut self.io);
-        trace!("TlsStream::poll: try complete_io {:?}", complete_io);
+        trace!("TlsStream::shutdown: try complete_io {:?}", complete_io);
         match complete_io {
             Ok(_) => (),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(Async::NotReady),
