@@ -149,7 +149,7 @@ impl<S, C> io::Read for TlsStream<S, C>
         trace!("TlsStream::read: read={:?}B; read_ok={};", read, read_ok);
 
         if !read_ok && read == 0 {
-            trace!("TlsStream::read: would block")
+            trace!("TlsStream::read: would block");
             Err(io::ErrorKind::WouldBlock.into())
         } else {
             Ok(read)
