@@ -112,14 +112,33 @@ impl<S, C> TlsStream<S, C> {
 }
 
 impl<S, C> TlsStream<S, C>
-where S: io::Read, C: Session, {
+where S: io::Read + io::Write, C: Session, {
+    fn complete_prior_io(&mut self) -> io::Result<()> {
+        if self.session.is_handshaking() {
+            trace!("TlsStream: complete prior handshake");
+            self.session.complete_io(&mut self.io)?;
+        }
+
+        if self.session.wants_write() {
+
+            trace!("TlsStream: complete write");
+            self.session.complete_io(&mut self.io)?;
+        }
+
+        Ok(())
+    }
+
     fn read_to_session(&mut self) -> io::Result<Option<usize>> {
+        self.complete_prior_io()?;
+
         if !self.session.wants_read() {
             trace!("TlsStream::read_to_session: no read needed");
             return Ok(None);
         }
 
-        match self.session.read_tls(&mut self.io) {
+        let read = self.session.read_tls(&mut self.io);
+        trace!("TlsStream::read_to_session: read_tls={:?};", read);
+        match read {
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 trace!("TlsStream::read_to_session: would block");
                 Ok(None)
@@ -138,16 +157,16 @@ impl<S, C> io::Read for TlsStream<S, C>
     where S: io::Read + io::Write, C: Session
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.eof {
-            return Ok(0);
-        }
+        // if self.eof {
+        //     return Ok(0);
+        // }
 
         let read_ok = self
             .read_to_session()?
             .is_some();
+
         let read = self.session.read(buf)?;
         trace!("TlsStream::read: read={:?}B; read_ok={};", read, read_ok);
-
         if !read_ok && read == 0 {
             trace!("TlsStream::read: would block");
             Err(io::ErrorKind::WouldBlock.into())
