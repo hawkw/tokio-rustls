@@ -111,6 +111,29 @@ impl<S, C> TlsStream<S, C> {
     }
 }
 
+impl<S, C> TlsStream<S, C>
+where S: io::Read, C: Session, {
+    fn read_to_session(&mut self) -> io::Result<Option<usize>> {
+        if !self.session.wants_read() {
+            trace!("TlsStream::read_to_session: no read needed");
+            return Ok(None);
+        }
+
+        match self.session.read_tls(&mut self.io) {
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                trace!("TlsStream::read_to_session: would block");
+                Ok(None)
+            },
+            Err(e) => Err(e),
+            Ok(0) => Ok(Some(0)),
+            Ok(sz) => self.session
+                .process_new_packets()
+                .map(|_| Some(sz))
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+        }
+    }
+}
+
 impl<S, C> io::Read for TlsStream<S, C>
     where S: io::Read + io::Write, C: Session
 {
@@ -119,19 +142,17 @@ impl<S, C> io::Read for TlsStream<S, C>
             return Ok(0);
         }
 
-        let read = Stream::new(&mut self.session, &mut self.io).read(buf);
-        trace!("TlsStream::read -> {:?}", read);
+        let read_ok = self
+            .read_to_session()?
+            .is_some();
+        let read = self.session.read(buf)?;
+        trace!("TlsStream::read: read={:?}B; read_ok={};", read, read_ok);
 
-        match read {
-            Ok(0) => { self.eof = true; Ok(0) },
-            Ok(n) => Ok(n),
-            Err(ref e) if e.kind() == io::ErrorKind::ConnectionAborted => {
-                self.eof = true;
-                self.is_shutdown = true;
-                self.session.send_close_notify();
-                Ok(0)
-            },
-            Err(e) => Err(e)
+        if !read_ok && read == 0 {
+            trace!("TlsStream::read: would block")
+            Err(io::ErrorKind::WouldBlock.into())
+        } else {
+            Ok(read)
         }
     }
 }
